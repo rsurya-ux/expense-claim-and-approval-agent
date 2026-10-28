@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Ambient Expense Agent with ADK 2.0 Graph Workflow and Human-in-the-Loop Review."""
+"""Ambient Expense Agent with ADK 2.0 Graph Workflow, Guardrails, and HITL Review."""
 
 import re
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from google.adk.agents.context import Context
 from google.adk.apps import App, ResumabilityConfig
@@ -26,7 +26,21 @@ from google.adk.workflow import START, Workflow, node
 from google.genai import types
 from pydantic import BaseModel, Field
 
-# Preserved model configuration
+# Enterprise Utilities
+from app.app_utils.guardrails import RuntimeGuardrail
+from app.app_utils.memory import (
+    AGENT_CONSTITUTION,
+    async_persist_background_memory,
+    compact_conversation_history,
+)
+from app.app_utils.model_router import StrategicModelRouter
+from app.app_utils.observability import (
+    PIIRedactor,
+    log_intent_vs_outcome,
+    logger,
+)
+
+# Preserved base model configuration
 MODEL = "gemini-3.8-flash"
 
 
@@ -86,13 +100,39 @@ def classify_expense(ctx: Context, node_input: Any) -> Event:
     amount, description = _parse_claim_from_input(node_input)
     pending = ctx.state.get("pending_claim")
 
+    # 1. Runtime Guardrail Check
+    is_valid, error_msg = RuntimeGuardrail.check_input(text=description, amount=amount)
+    if not is_valid:
+        log_intent_vs_outcome(
+            user_intent="submit_claim",
+            execution_outcome="REJECTED_BY_GUARDRAIL",
+            amount=amount,
+            discrepancy=True,
+            extra_details={"violation": error_msg},
+        )
+        return Event(
+            output={"amount": amount, "description": description, "status": "REJECTED", "reason": error_msg},
+            content=types.Content(
+                role="model",
+                parts=[types.Part.from_text(text=f"### 🛡️ Guardrail Alert\n{error_msg}")],
+            ),
+            route=None,
+        )
+
+    # 2. Context & History Compaction Check
+    history = ctx.state.get("history", [])
+    if isinstance(history, list) and len(history) > 6:
+        compacted = compact_conversation_history(history, max_turns=4)
+        ctx.state["history"] = compacted
+
     raw_text = description.lower().strip()
     decision_tokens = {"yes", "y", "approve", "approved", "no", "n", "reject", "rejected"}
     raw_words = set(re.findall(r"\w+", raw_text))
 
     # If there is a pending claim awaiting manager review:
-    # Any input containing a decision token OR having no dollar amount is treated as a review response.
     if pending and (bool(raw_words & decision_tokens) or amount == 0.0):
+        # Model routing for manager review
+        StrategicModelRouter.resolve_model(amount=pending["amount"], is_escalation=True)
         return Event(
             output={
                 "amount": pending["amount"],
@@ -104,17 +144,35 @@ def classify_expense(ctx: Context, node_input: Any) -> Event:
 
     claim_payload = {"amount": amount, "description": description}
 
+    # 3. Dynamic Model Routing Evaluation
+    model_name, tier, rationale = StrategicModelRouter.resolve_model(
+        amount=amount,
+        is_escalation=(amount >= 100.0),
+    )
+
     if amount < 100.0:
+        log_intent_vs_outcome(
+            user_intent="submit_claim",
+            execution_outcome="ROUTE_AUTO_APPROVE",
+            amount=amount,
+            extra_details={"model_tier": tier, "rationale": rationale},
+        )
         return Event(
             output=claim_payload,
             route="auto_approve",
-            state={"current_claim": claim_payload, "pending_claim": None},
+            state={"current_claim": claim_payload, "pending_claim": None, "model_tier": tier},
         )
     else:
+        log_intent_vs_outcome(
+            user_intent="submit_claim",
+            execution_outcome="ROUTE_MANAGER_REVIEW",
+            amount=amount,
+            extra_details={"model_tier": tier, "rationale": rationale},
+        )
         return Event(
             output=claim_payload,
             route="review_agent",
-            state={"pending_claim": claim_payload, "current_claim": claim_payload},
+            state={"pending_claim": claim_payload, "current_claim": claim_payload, "model_tier": tier},
         )
 
 
@@ -124,13 +182,34 @@ def auto_approve(node_input: dict) -> Event:
     amount = float(node_input.get("amount", 0.0))
     description = str(node_input.get("description", "Expense claim"))
 
+    claim_id = f"EXP-{int(amount * 100)}"
     decision = ExpenseDecision(
-        claim_id=f"EXP-{int(amount * 100)}",
+        claim_id=claim_id,
         amount=amount,
         description=description,
         status="APPROVED",
         approver="auto_approve_policy",
         note="Instantly approved: claim is under the $100 threshold.",
+    )
+
+    # Output Guardrail Verification
+    RuntimeGuardrail.check_output(decision.model_dump())
+
+    # Background Async Memory Persistence (non-blocking)
+    async_persist_background_memory(
+        employee_id="EMP-DEFAULT",
+        claim_id=claim_id,
+        amount=amount,
+        status="APPROVED",
+    )
+
+    # Audit Logging: Intent vs Outcome
+    log_intent_vs_outcome(
+        user_intent="submit_claim",
+        execution_outcome="AUTO_APPROVED",
+        amount=amount,
+        claim_id=claim_id,
+        discrepancy=False,
     )
 
     content_text = (
@@ -172,6 +251,12 @@ async def review_agent(ctx: Context, node_input: dict) -> Any:
 
     # Step 1: Trigger HITL Pause if manager approval has not been provided
     if user_response is None:
+        log_intent_vs_outcome(
+            user_intent="submit_high_value_claim",
+            execution_outcome="PAUSED_FOR_HITL",
+            amount=amount,
+            extra_details={"interrupt_id": interrupt_id},
+        )
         prompt_message = (
             f"### ⚠️ Manager Review Required\n\n"
             f"- **Claim Amount:** ${amount:.2f}\n"
@@ -208,6 +293,13 @@ async def review_agent(ctx: Context, node_input: dict) -> Any:
 
     if not is_approved and not is_rejected:
         # Invalid response! Re-prompt and keep workflow paused.
+        log_intent_vs_outcome(
+            user_intent="manager_review_response",
+            execution_outcome="AMBIGUOUS_REPROMPT",
+            amount=amount,
+            discrepancy=True,
+            extra_details={"invalid_response": str(user_response)},
+        )
         invalid_message = (
             f"### ⚠️ Invalid Response: \"{user_response}\"\n\n"
             f"`{user_response}` is not a recognized review decision for pending claim of **${amount:.2f}** ('{description}').\n\n"
@@ -229,14 +321,36 @@ async def review_agent(ctx: Context, node_input: dict) -> Any:
         return
 
     final_status = "APPROVED" if is_approved else "REJECTED"
+    claim_id = f"EXP-{int(amount * 100)}"
 
     decision = ExpenseDecision(
-        claim_id=f"EXP-{int(amount * 100)}",
+        claim_id=claim_id,
         amount=amount,
         description=description,
         status=final_status,
         approver="manager_review",
         note=f"Manager review completed with response: {user_response}",
+    )
+
+    # Output Guardrail Verification
+    RuntimeGuardrail.check_output(decision.model_dump())
+
+    # Background Async Memory Persistence (non-blocking)
+    async_persist_background_memory(
+        employee_id="EMP-DEFAULT",
+        claim_id=claim_id,
+        amount=amount,
+        status=final_status,
+    )
+
+    # Log Intent vs Outcome
+    log_intent_vs_outcome(
+        user_intent="manager_review_response",
+        execution_outcome=f"MANAGER_{final_status}",
+        amount=amount,
+        claim_id=claim_id,
+        discrepancy=(final_status == "REJECTED"),
+        extra_details={"decision_input": str(user_response)},
     )
 
     summary_text = (
@@ -265,7 +379,10 @@ edges = [
 
 root_agent = Workflow(
     name="expense_agent",
-    description="Ambient expense agent with automated approval under $100 and human-in-the-loop review for claims $100 or more.",
+    description=(
+        "Ambient expense agent with automated approval under $100 and human-in-the-loop review for claims $100 or more.\n\n"
+        f"AGENT CONSTITUTION:\n{AGENT_CONSTITUTION}"
+    ),
     edges=edges,
 )
 

@@ -19,6 +19,11 @@ An ambient enterprise expense processing system powered by **Google Agent Develo
 - **Automated Policy Enforcement:**
   - **Auto-Approval:** Claims strictly **< $100.00** (e.g., $15 coffee, $45 team lunch, $85 office supplies) are validated and approved automatically with zero human intervention.
   - **Human-in-the-Loop (HITL):** Claims **&ge; $100.00** (e.g., $250 flights, $1,250 hardware) pause via ADK interrupts and route to the manager queue.
+- **Enterprise Agent Constitution:** Governed by an immutable system prompt enforcing fiscal responsibility, anti-fraud compliance, and privacy rules.
+- **Strategic Tiered Model Routing:** Dynamically routes routine claims to `gemini-2.5-flash` and high-value / disputed claims to `gemini-2.5-pro` for deep reasoning.
+- **Active Runtime Guardrails:** Intercepts and screens inputs for adversarial prompt injections, negative amounts, and invalid parameters before workflow dispatch.
+- **Context Compaction & Async Memory:** Automatically compacts long conversation histories into structured summaries and asynchronously updates employee spend ledgers in the background.
+- **Structured JSON Logging & PII Redaction:** Emits RFC-compliant Google Cloud structured logs with explicit **Intent vs. Outcome** tracking and automatic redaction of credit cards, SSNs, and emails.
 - **Glassmorphism Manager Dashboard:** Modern, responsive FastAPI web dashboard hosted on Cloud Run for finance managers to inspect, approve, or reject flagged claims.
 - **Robust Adapter Pattern:** Seamlessly translates raw Pub/Sub push HTTP requests (`--push-no-wrapper`) into ADK streaming execution workflows (`app/app_utils/reasoning_engine_adapter.py`).
 - **Resilient Memory & State:** Backed by ADK resumable state machine (`ResumabilityConfig(is_resumable=True)`), surviving container recycles and network interrupts.

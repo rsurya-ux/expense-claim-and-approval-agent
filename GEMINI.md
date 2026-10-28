@@ -77,3 +77,22 @@ The `expense_agent` is an ambient, event-driven intelligent corporate expense au
   agents-cli eval run
   ```
 - All evaluation cases must have verifiable ground truth matching the `< $100.00` auto-approve and `>= $100.00` review policy.
+
+
+---
+
+## 5. Enterprise Context & Memory Architecture
+
+- **Agent Constitution / System Prompt:** `app.app_utils.memory.AGENT_CONSTITUTION` establishes non-negotiable fiscal governance, anti-fraud compliance, and privacy rules.
+- **Conversation History Compaction:** `compact_conversation_history()` monitors turn counts (> 6 turns) and compacts older conversation exchanges into structured memory summaries, ensuring token economy while preserving active claims and decisions.
+- **Background Asynchronous Memory Ledger:** `async_persist_background_memory()` utilizes `asyncio.create_task` with `EmployeeSpendLedger` to persist employee cumulative spend and claim history in the background without blocking the request-response cycle.
+
+---
+
+## 6. Advanced Observability, Guardrails & Model Routing
+
+- **Strategic Tiered Model Routing:** `StrategicModelRouter.resolve_model()` routes routine claims (< $100) to `gemini-2.5-flash` for high-throughput, low-latency execution, and automatically routes complex claims (>= $100 or manager escalations) to `gemini-2.5-pro` for deep reasoning.
+- **Runtime Guardrail Plugins:** `RuntimeGuardrail.check_input()` and `check_output()` intercept incoming prompts to reject adversarial prompt injections, negative amounts, and enforce policy compliance.
+- **Structured JSON Logging:** `StructuredJsonFormatter` outputs RFC-compliant Google Cloud structured logs with `severity`, `component`, `timestamp`, and `audit` blocks.
+- **Explicit Intent vs. Outcome Logging:** `log_intent_vs_outcome()` logs both initial `user_intent` and final `execution_outcome` with discrepancy flags.
+- **PII Redaction Engine:** `PIIRedactor` automatically redacts credit cards (`[REDACTED_CARD]`), SSNs (`[REDACTED_SSN]`), phone numbers, and masks email addresses across all logs and traces.
