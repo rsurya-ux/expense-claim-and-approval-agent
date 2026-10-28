@@ -13,13 +13,13 @@ echo "Project: ${PROJECT_ID}"
 echo "=========================================================="
 
 echo ""
-echo "[1/2] Submitting $45 Auto-Approved Expense (Threshold <= $50)..."
+echo "[1/2] Submitting $45 Auto-Approved Expense (Threshold < $100)..."
 gcloud pubsub topics publish "${TOPIC_NAME}" \
   --project="${PROJECT_ID}" \
   --message='{"input": {"message": "{\"amount\": 45, \"submitter\": \"bob@company.com\", \"category\": \"meals\", \"description\": \"Team lunch\", \"date\": \"2026-04-12\"}"}}'
 
 echo ""
-echo "[2/2] Submitting $250 Human-in-the-Loop Review Expense (Threshold > $50)..."
+echo "[2/2] Submitting $250 Human-in-the-Loop Review Expense (Threshold >= $100)..."
 gcloud pubsub topics publish "${TOPIC_NAME}" \
   --project="${PROJECT_ID}" \
   --message='{"input": {"message": "{\"amount\": 250, \"submitter\": \"alice@company.com\", \"category\": \"travel\", \"description\": \"NYC Flight Tickets\", \"date\": \"2026-04-12\"}"}}'

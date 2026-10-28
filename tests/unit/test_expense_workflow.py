@@ -263,3 +263,71 @@ def test_review_agent_invalid_response_repairs_and_reprompts() -> None:
         assert approved[0].output["amount"] == 250.0
 
     asyncio.run(_test())
+
+
+
+def test_boundary_conditions_99_vs_100() -> None:
+    """Verifies that $99.00 is auto-approved while $100.00 triggers manager review."""
+    async def _test():
+        runner = InMemoryRunner(app=app)
+        
+        # Test $99.00
+        session_99 = await runner.session_service.create_session(
+            app_name=app.name, user_id="emp-99"
+        )
+        events_99 = []
+        async for event in runner.run_async(
+            user_id="emp-99",
+            session_id=session_99.id,
+            new_message=types.Content(
+                role="user",
+                parts=[types.Part.from_text(text="Claim $99.00 for books")],
+            ),
+        ):
+            events_99.append(event)
+        
+        approved_99 = [
+            e for e in events_99
+            if e.output and isinstance(e.output, dict) and e.output.get("status") == "APPROVED"
+        ]
+        assert len(approved_99) == 1
+        assert approved_99[0].output["amount"] == 99.0
+
+        # Test $100.00
+        session_100 = await runner.session_service.create_session(
+            app_name=app.name, user_id="emp-100"
+        )
+        events_100 = []
+        async for event in runner.run_async(
+            user_id="emp-100",
+            session_id=session_100.id,
+            new_message=types.Content(
+                role="user",
+                parts=[types.Part.from_text(text="Claim $100.00 for offsite")],
+            ),
+        ):
+            events_100.append(event)
+
+        paused_100 = [
+            e for e in events_100
+            if e.long_running_tool_ids and "manager_review" in e.long_running_tool_ids
+        ]
+        assert len(paused_100) == 1
+
+    asyncio.run(_test())
+
+
+def test_string_and_currency_symbol_parsing() -> None:
+    """Verifies parsing of amounts with and without dollar symbols."""
+    from app.agent import _parse_claim_from_input
+    
+    amt1, desc1 = _parse_claim_from_input("Team lunch $45.50 at bistro")
+    assert amt1 == 45.50
+    assert "lunch" in desc1.lower()
+
+    amt2, desc2 = _parse_claim_from_input({"amount": 120.0, "description": "Flight"})
+    assert amt2 == 120.0
+    assert desc2 == "Flight"
+
+    amt3, _ = _parse_claim_from_input("250 USD conference fee")
+    assert amt3 == 250.0

@@ -25,8 +25,8 @@ flowchart TD
         Adapter["ASGI Adapter<br/>(reasoning_engine_adapter.py)"]
         Router["Graph Workflow Engine<br/>(app/agent.py)"]
         PolicyNode["Expense Policy Evaluator"]
-        AutoNode["Auto-Approval Decision Node"]
-        ReviewNode["Manager Review Flagging Node"]
+        AutoNode["Auto-Approval Decision Node (< $100)"]
+        ReviewNode["Manager Review Flagging Node (>= $100)"]
     end
 
     subgraph HITL["Human-in-the-Loop Review System"]
@@ -42,8 +42,8 @@ flowchart TD
     PushSub -->|HTTPS POST :query| Adapter
     Adapter --> Router
     Router --> PolicyNode
-    PolicyNode -->|Amount <= $50| AutoNode
-    PolicyNode -->|Amount > $50| ReviewNode
+    PolicyNode -->|Amount < $100.00| AutoNode
+    PolicyNode -->|Amount >= $100.00| ReviewNode
     AutoNode -->|200 OK Auto Approved| AuditLog
     ReviewNode -->|Dispatches Review Task| CloudRun
     CloudRun --> Manager
@@ -63,12 +63,12 @@ stateDiagram-v2
 
     state CheckPolicy {
         [*] --> EvaluateAmount
-        EvaluateAmount --> UnderThreshold: amount <= $50
-        EvaluateAmount --> OverThreshold: amount > $50
+        EvaluateAmount --> UnderThreshold: amount < $100.00
+        EvaluateAmount --> OverThreshold: amount >= $100.00
     }
 
     UnderThreshold --> AutoApprove: Mark Status APPROVED
-    OverThreshold --> FlagReview: Mark Status PENDING_REVIEW
+    OverThreshold --> FlagReview: Pause with adk_request_input
 
     AutoApprove --> EmitAuditLog: Record Approval in Logs
     FlagReview --> NotifyManager: Send to Manager HITL Queue

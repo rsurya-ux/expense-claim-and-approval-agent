@@ -173,7 +173,7 @@
           </span>
         </div>
         <div class="mt-4 flex items-baseline space-x-2">
-          <span class="font-display text-2xl font-bold text-white">&gt; $50.00</span>
+          <span class="font-display text-2xl font-bold text-white">&ge; $100.00</span>
           <span class="text-xs text-slate-400">HITL Required</span>
         </div>
       </div>
@@ -188,7 +188,7 @@
           </span>
         </div>
         <div class="mt-4 flex items-baseline space-x-2">
-          <span class="font-display text-2xl font-bold text-emerald-400">&le; $50.00</span>
+          <span class="font-display text-2xl font-bold text-emerald-400">&lt; $100.00</span>
           <span class="text-xs text-slate-400">Zero-Touch Pass</span>
         </div>
       </div>
@@ -329,7 +329,7 @@
             How this works in production:
           </div>
           <p>
-            When an expense is submitted via API or ERP, it publishes to Google Cloud Pub/Sub. Pub/Sub pushes the payload directly to the Vertex AI Reasoning Engine using <code class="text-indigo-300">--push-no-wrapper</code>. Claims &gt; $50 pause in the ADK session state until a manager reviews them on this dashboard.
+            When an expense is submitted via API or ERP, it publishes to Google Cloud Pub/Sub. Pub/Sub pushes the payload directly to the Vertex AI Reasoning Engine using <code class="text-indigo-300">--push-no-wrapper</code>. Claims &ge; $100 pause in the ADK session state until a manager reviews them on this dashboard.
           </p>
         </div>
 
@@ -381,7 +381,7 @@
         </div>
 
         <div class="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300">
-          💡 Policy check note: Amounts &le; $50 will be auto-approved instantly; amounts &gt; $50 will route to manager review.
+          💡 Policy check note: Amounts &lt; $100 will be auto-approved instantly; amounts &ge; $100 will route to manager review.
         </div>
 
         <div class="flex justify-end space-x-3 pt-2">
@@ -408,7 +408,7 @@
         description: "NYC Flight Tickets for Product QBR",
         date: "2026-04-12",
         status: "PENDING_REVIEW",
-        reason: "Amount ($250.00) exceeds auto-approval threshold ($50.00). Requires Finance Manager confirmation.",
+        reason: "Amount ($250.00) exceeds auto-approval threshold ($100.00). Requires Finance Manager confirmation.",
         timestamp: new Date().toLocaleTimeString()
       }
     ];
@@ -422,7 +422,7 @@
         description: "Team lunch meeting",
         date: "2026-04-12",
         status: "AUTO_APPROVED",
-        reason: "Amount ($45.00) is within autonomous limit (<= $50.00). Zero-touch approval executed.",
+        reason: "Amount ($45.00) is within autonomous limit (< $100.00). Zero-touch approval executed.",
         timestamp: "09:31:36 AM"
       }
     ];
@@ -518,25 +518,25 @@
 
       // Step 3: Policy Check
       await setStep("policy");
-      logTerminal(`Evaluating policy: rule 'AmountThresholdCheck(max=50.00)'`);
+      logTerminal(`Evaluating policy: rule 'AmountThresholdCheck(max=100.00)'`);
       await new Promise(r => setTimeout(r, 500));
 
       // Step 4: Routing Decision
       await setStep("route");
-      if (claim.amount <= 50.00) {
-        logTerminal(`Policy passed: $${claim.amount.toFixed(2)} <= $50.00. Decision: AUTO_APPROVE`, "success");
+      if (claim.amount < 100.00) {
+        logTerminal(`Policy passed: $${claim.amount.toFixed(2)} < $100.00. Decision: AUTO_APPROVE`, "success");
         logTerminal(`Writing approval confirmation to audit log. HTTP 200 OK acknowledged.`, "success");
         
         claim.status = "AUTO_APPROVED";
-        claim.reason = `Amount ($${claim.amount.toFixed(2)}) is within autonomous limit (<= $50.00). Approved automatically.`;
+        claim.reason = `Amount ($${claim.amount.toFixed(2)}) is within autonomous limit (< $100.00). Approved automatically.`;
         claim.timestamp = new Date().toLocaleTimeString();
         approvedClaims.unshift(claim);
       } else {
-        logTerminal(`Threshold triggered: $${claim.amount.toFixed(2)} > $50.00. Decision: HITL_MANAGER_REVIEW`, "warn");
+        logTerminal(`Threshold triggered: $${claim.amount.toFixed(2)} >= $100.00. Decision: HITL_MANAGER_REVIEW`, "warn");
         logTerminal(`Dispatching review task to Cloud Run Dashboard. Awaiting Human Manager decision.`, "warn");
         
         claim.status = "PENDING_REVIEW";
-        claim.reason = `Amount ($${claim.amount.toFixed(2)}) exceeds auto-approval threshold ($50.00). Flagged for manager sign-off.`;
+        claim.reason = `Amount ($${claim.amount.toFixed(2)}) exceeds auto-approval threshold ($100.00). Flagged for manager sign-off.`;
         claim.timestamp = new Date().toLocaleTimeString();
         pendingClaims.unshift(claim);
       }
@@ -627,7 +627,7 @@
               <i data-lucide="check-circle-2" class="w-6 h-6"></i>
             </div>
             <div class="font-display font-bold text-white text-base">All Caught Up!</div>
-            <p class="text-xs text-slate-400 max-w-sm mx-auto">No claims currently require human intervention. Expenses below $50 are auto-cleared.</p>
+            <p class="text-xs text-slate-400 max-w-sm mx-auto">No claims currently require human intervention. Expenses below $100 are auto-cleared.</p>
           </div>
         `;
         return;

@@ -13,15 +13,16 @@ An ambient enterprise expense processing system powered by **Google Agent Develo
 
 ---
 
-## 🌟 Key Features
+## 🌟 Key Capabilities & Policy Rules
 
-- **Ambient Event-Driven Architecture:** Ingests expenses asynchronously via Google Cloud Pub/Sub topics.
-- **Automated Policy Decisions:**
-  - **Auto-Approval:** Expenses **&le; $50** (e.g. daily team lunches) are automatically validated, policy-checked, and approved with instant zero-touch execution.
-  - **Human-in-the-Loop (HITL):** Expenses **> $50** (e.g. flight tickets, equipment purchases) are flagged and routed to the manager queue.
+- **Ambient Event-Driven Ingestion:** Ingests expenses asynchronously via Google Cloud Pub/Sub topics.
+- **Automated Policy Enforcement:**
+  - **Auto-Approval:** Claims strictly **< $100.00** (e.g., $15 coffee, $45 team lunch, $85 office supplies) are validated and approved automatically with zero human intervention.
+  - **Human-in-the-Loop (HITL):** Claims **&ge; $100.00** (e.g., $250 flights, $1,250 hardware) pause via ADK interrupts and route to the manager queue.
 - **Glassmorphism Manager Dashboard:** Modern, responsive FastAPI web dashboard hosted on Cloud Run for finance managers to inspect, approve, or reject flagged claims.
-- **Robust Adapter Pattern:** Seamlessly translates raw Pub/Sub push HTTP requests (`--push-no-wrapper`) into ADK streaming execution workflows.
-- **Enterprise-Grade Observability:** Cloud Logging and Cloud Trace integration for end-to-end auditability.
+- **Robust Adapter Pattern:** Seamlessly translates raw Pub/Sub push HTTP requests (`--push-no-wrapper`) into ADK streaming execution workflows (`app/app_utils/reasoning_engine_adapter.py`).
+- **Resilient Memory & State:** Backed by ADK resumable state machine (`ResumabilityConfig(is_resumable=True)`), surviving container recycles and network interrupts.
+- **Evaluation & Quality Flywheel:** Built-in evaluation dataset in `tests/eval/` matching the Gemini platform evaluation methodology.
 
 ---
 
@@ -29,37 +30,39 @@ An ambient enterprise expense processing system powered by **Google Agent Develo
 
 ```
 expense-claim-and-approval-agent/
-├── backend/                       # ADK 2.0 Agent Backend
-│   ├── app/
-│   │   ├── agent.py               # Graph Workflow state machine & policy nodes
-│   │   ├── fast_api_app.py        # Local / Containerized FastAPI entrypoint
-│   │   └── app_utils/
-│   │       ├── reasoning_engine_adapter.py  # Push adapter for Reasoning Engine
-│   │       ├── services.py        # External service hooks
-│   │       └── a2a.py             # Agent-to-Agent protocol utilities
-│   ├── deployment/                # Terraform infrastructure definitions
-│   ├── tests/                     # Unit, Integration, and Eval datasets
-│   │   ├── unit/                  # Workflow step unit tests (pytest)
-│   │   ├── integration/           # E2E server integration tests
-│   │   └── eval/                  # Quality evaluation datasets & configs
-│   ├── pyproject.toml
-│   └── Dockerfile
-│
-├── frontend/                      # Manager HITL Approval Dashboard
+├── app/                           # Core ADK 2.0 Graph Workflow Agent
+│   ├── agent.py                   # State machine graph & approval policy nodes
+│   ├── fast_api_app.py            # Local & containerized ASGI application
+│   └── app_utils/
+│       ├── reasoning_engine_adapter.py  # Push adapter for Reasoning Engine
+│       ├── services.py            # External service hooks
+│       └── a2a.py                 # Agent-to-Agent protocol utilities
+├── dashboard/                     # Manager HITL Approval Dashboard (FastAPI)
 │   ├── main.py                    # Dark glassmorphism dashboard server
 │   ├── Dockerfile                 # Cloud Run container definition
 │   ├── requirements.txt
 │   └── pyproject.toml
-│
+├── deployment/                    # Terraform single-project & telemetry infrastructure
+├── tests/                         # Full Pytest test suite
+│   ├── unit/                      # Policy, boundary ($99 vs $100), and repair tests
+│   ├── integration/               # E2E server integration tests
+│   └── eval/                      # Evaluation dataset & quality config
+│       ├── eval_config.yaml
+│       ├── response_quality.py
+│       └── datasets/
+│           └── basic-dataset.json
 ├── scripts/                       # Automation & Testing Tooling
 │   ├── setup_gcp_pipeline.sh      # Provisions Pub/Sub, IAM & Push Subscriptions
-│   ├── publish_test_expenses.sh   # Submits $45 auto and $250 review test events
+│   ├── publish_test_expenses.sh   # Submits test events ($45 auto vs $250 review)
 │   ├── run_local_backend.sh       # Launches backend on port 8080
 │   └── run_local_frontend.sh      # Launches dashboard on port 8081
-│
+├── agents-cli-manifest.yaml       # Project manifest for agents-cli
+├── Dockerfile                     # Backend container definition
+├── pyproject.toml                 # Project metadata & dependencies
+├── GEMINI.md                      # System & domain agent specification
 ├── ARCHITECTURE.md                # System diagrams & execution flow
-├── .gitignore                     # Clean repository ignore rules
-└── README.md                      # Documentation
+├── index.html                     # Live client-side web showcase
+└── README.md
 ```
 
 ---
@@ -71,24 +74,27 @@ expense-claim-and-approval-agent/
 - [`uv`](https://docs.astral.sh/uv/) package manager
 - Google Cloud SDK (`gcloud`) authenticated to your GCP project
 
-### 2. Run Backend Tests
-Run the pytest test suite covering workflow policy execution:
-
+### 2. Run Tests
 ```bash
-cd backend
-uv run pytest tests/unit
+# Run unit tests (8 passing tests covering boundaries & repair)
+uv run pytest tests/unit -v
+
+# Run integration tests
+uv run pytest tests/integration -v
 ```
 
-### 3. Start Backend Locally
+### 3. Run Evaluation Suite
 ```bash
+agents-cli eval run
+```
+
+### 4. Start Local Services
+```bash
+# Start Agent Backend (http://localhost:8080)
 ./scripts/run_local_backend.sh
-# Server starts at http://localhost:8080
-```
 
-### 4. Start Manager Dashboard Locally
-```bash
+# Start Manager Dashboard (http://localhost:8081)
 ./scripts/run_local_frontend.sh
-# Dashboard accessible at http://localhost:8081
 ```
 
 ---
@@ -96,15 +102,13 @@ uv run pytest tests/unit
 ## ☁️ Google Cloud Deployment
 
 ### 1. Deploy Agent to Vertex AI Reasoning Engine
-Deploy using `agents-cli` or Vertex AI SDK:
 ```bash
-cd backend
 agents-cli deploy reasoning-engine --project <PROJECT_ID> --region us-central1
 ```
 
 ### 2. Deploy Manager Dashboard to Cloud Run
 ```bash
-cd frontend
+cd dashboard
 gcloud run deploy expense-manager-dashboard \
   --source . \
   --region us-central1 \
@@ -113,7 +117,6 @@ gcloud run deploy expense-manager-dashboard \
 ```
 
 ### 3. Configure Event Pipeline (Pub/Sub + IAM)
-Run the automated setup script with your Reasoning Engine ID:
 ```bash
 ./scripts/setup_gcp_pipeline.sh <REASONING_ENGINE_ID>
 ```
@@ -130,11 +133,9 @@ Submit test expense reports directly into the Pub/Sub pipeline:
 
 ### Verification Scenarios:
 1. **$45 Team Lunch (Auto-Approval):**
-   - Published payload: `{"amount": 45, "submitter": "bob@company.com", "category": "meals"}`
-   - **Expected Outcome:** Reasoning Engine processes event and completes with `200 OK`. No manager intervention required.
+   - Amount < $100 threshold &rarr; Reasoning Engine validates and approves automatically with `200 OK`.
 2. **$250 NYC Flight Tickets (Manager Review):**
-   - Published payload: `{"amount": 250, "submitter": "alice@company.com", "category": "travel"}`
-   - **Expected Outcome:** Policy flag triggers. Item appears on the Human-in-the-Loop manager dashboard for approval.
+   - Amount &ge; $100 threshold &rarr; Workflow pauses with `adk_request_input`. The claim appears on the Manager Dashboard for human approval.
 
 Monitor real-time execution in Cloud Logging:
 ```bash
@@ -144,4 +145,4 @@ gcloud logging read 'resource.type="aiplatform.googleapis.com/ReasoningEngine"' 
 ---
 
 ## 📄 License
-Licensed under the Apache License, Version 2.0. See the LICENSE details in Google ADK templates.
+Licensed under the Apache License, Version 2.0.

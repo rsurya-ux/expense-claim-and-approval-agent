@@ -1,0 +1,108 @@
+{
+  "eval_cases": [
+    {
+      "eval_case_id": "auto_approve_small_supplies",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "Submit expense claim of $35.00 for office supplies"}]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [{"text": "APPROVED"}]
+        }
+      }
+    },
+    {
+      "eval_case_id": "auto_approve_team_lunch",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "I submit an expense for $45.00 lunch with a client"}]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [{"text": "APPROVED"}]
+        }
+      }
+    },
+    {
+      "eval_case_id": "auto_approve_client_dinner",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "I would like to report an expense of $75.50 for client dinner"}]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [{"text": "APPROVED"}]
+        }
+      }
+    },
+    {
+      "eval_case_id": "auto_approve_boundary_99",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "Claim $99.00 for professional certification study books"}]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [{"text": "APPROVED"}]
+        }
+      }
+    },
+    {
+      "eval_case_id": "flag_exact_boundary_100",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "Submit expense report for $100.00 team offsite supplies"}]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [{"text": "Manager Review Required"}]
+        }
+      }
+    },
+    {
+      "eval_case_id": "flag_high_value_flight",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "Submit expense of $250.00 for annual conference flight tickets"}]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [{"text": "Manager Review Required"}]
+        }
+      }
+    },
+    {
+      "eval_case_id": "flag_hotel_lodging",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "Hotel accommodation for $480.00 during customer summit"}]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [{"text": "Manager Review Required"}]
+        }
+      }
+    },
+    {
+      "eval_case_id": "flag_equipment_hardware",
+      "prompt": {
+        "role": "user",
+        "parts": [{"text": "Hardware purchase: $1250.00 for new development laptop"}]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [{"text": "Manager Review Required"}]
+        }
+      }
+    }
+  ]
+}
