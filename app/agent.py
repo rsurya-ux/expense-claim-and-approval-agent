@@ -30,8 +30,10 @@ from pydantic import BaseModel, Field
 from app.app_utils.guardrails import RuntimeGuardrail
 from app.app_utils.memory import (
     AGENT_CONSTITUTION,
+    VertexAiVectorMemoryStore,
     async_persist_background_memory,
     compact_conversation_history,
+    vector_memory_store,
 )
 from app.app_utils.model_router import StrategicModelRouter
 from app.app_utils.observability import (
@@ -155,6 +157,12 @@ def classify_expense(ctx: Context, node_input: Any) -> Event:
             compacted = compact_conversation_history(history, max_turns=4)
             ctx.state["history"] = compacted
 
+        # Query persistent Vector Store for duplicate detection & cross-session memory
+        similar_past = vector_memory_store.search_similar_past_claims(
+            query=description,
+            limit=3,
+        )
+
         raw_text = description.lower().strip()
         decision_tokens = {"yes", "y", "approve", "approved", "no", "n", "reject", "rejected"}
         raw_words = set(re.findall(r"\w+", raw_text))
@@ -240,12 +248,13 @@ def auto_approve(node_input: dict) -> Event:
         # Output Guardrail Verification
         RuntimeGuardrail.check_output(decision.model_dump())
 
-        # Background Async Memory Persistence (non-blocking)
+        # Background Async Memory Persistence to Persistent Vector Store (non-blocking)
         async_persist_background_memory(
             employee_id="EMP-DEFAULT",
             claim_id=claim_id,
             amount=amount,
             status="APPROVED",
+            description=description,
         )
 
         # Audit Logging: Intent vs Outcome
@@ -398,12 +407,13 @@ async def review_agent(ctx: Context, node_input: dict) -> Any:
         # Output Guardrail Verification
         RuntimeGuardrail.check_output(decision.model_dump())
 
-        # Background Async Memory Persistence (non-blocking)
+        # Background Async Memory Persistence to Persistent Vector Store (non-blocking)
         async_persist_background_memory(
             employee_id="EMP-DEFAULT",
             claim_id=claim_id,
             amount=amount,
             status=final_status,
+            description=description,
         )
 
         # Log Intent vs Outcome

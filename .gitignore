@@ -42,6 +42,8 @@ env/
 .coverage.*
 htmlcov/
 *.log
+*.db
+*.sqlite*
 
 # Antigravity & Agent CLI Run State
 .google-agents-cli/

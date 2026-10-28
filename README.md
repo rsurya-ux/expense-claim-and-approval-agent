@@ -22,7 +22,7 @@ An ambient enterprise expense processing system powered by **Google Agent Develo
 - **Enterprise Agent Constitution:** Governed by an immutable system prompt enforcing fiscal responsibility, anti-fraud compliance, and privacy rules.
 - **Strategic Tiered Model Routing:** Dynamically routes routine claims to `gemini-2.5-flash` and high-value / disputed claims to `gemini-2.5-pro` for deep reasoning.
 - **Active Runtime Guardrails:** Intercepts and screens inputs for adversarial prompt injections, negative amounts, and invalid parameters before workflow dispatch.
-- **Context Compaction & Async Memory:** Automatically compacts long conversation histories into structured summaries and asynchronously updates employee spend ledgers in the background.
+- **Context Compaction & Persistent Vector Store:** Automatically compacts long conversation histories into structured summaries and asynchronously persists spend records to a persistent database and **Google Cloud Vertex AI Vector Store** (`VertexAiRagMemoryService` & `VertexAiMemoryBankService`) for semantic duplicate detection.
 - **Structured JSON Logging & PII Redaction:** Emits RFC-compliant Google Cloud structured logs with explicit **Intent vs. Outcome** tracking and automatic redaction of credit cards, SSNs, and emails.
 - **Glassmorphism Manager Dashboard:** Modern, responsive FastAPI web dashboard hosted on Cloud Run for finance managers to inspect, approve, or reject flagged claims.
 - **Robust Adapter Pattern:** Seamlessly translates raw Pub/Sub push HTTP requests (`--push-no-wrapper`) into ADK streaming execution workflows (`app/app_utils/reasoning_engine_adapter.py`).

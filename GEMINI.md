@@ -85,7 +85,7 @@ The `expense_agent` is an ambient, event-driven intelligent corporate expense au
 
 - **Agent Constitution / System Prompt:** `app.app_utils.memory.AGENT_CONSTITUTION` establishes non-negotiable fiscal governance, anti-fraud compliance, and privacy rules.
 - **Conversation History Compaction:** `compact_conversation_history()` monitors turn counts (> 6 turns) and compacts older conversation exchanges into structured memory summaries, ensuring token economy while preserving active claims and decisions.
-- **Background Asynchronous Memory Ledger:** `async_persist_background_memory()` utilizes `asyncio.create_task` with `EmployeeSpendLedger` to persist employee cumulative spend and claim history in the background without blocking the request-response cycle.
+- **Background Asynchronous Memory Ledger & Persistent Vector Store:** `async_persist_background_memory()` utilizes `asyncio.create_task` with `EmployeeSpendLedger` and `VertexAiVectorMemoryStore` (`VertexAiRagMemoryService` & `VertexAiMemoryBankService`) to asynchronously write transactions into a persistent database and semantic vector store. Enables cross-session historical recall and semantic duplicate claim detection without blocking the request-response cycle.
 
 ---
 

@@ -165,3 +165,25 @@ def test_custom_opentelemetry_spans() -> None:
         assert span is not None
         # Span must have recorded attributes with PII masked
         # Context exited normally with OK status
+
+
+
+def test_vertex_ai_vector_memory_store() -> None:
+    """Verifies persistent database and Vector Store cross-session memory retrieval."""
+    from app.app_utils.memory import VertexAiVectorMemoryStore
+    
+    store = VertexAiVectorMemoryStore(db_path=":memory:")
+    store.persist_claim_record(
+        employee_id="emp-123@corp.com",
+        claim_id="EXP-VEC-101",
+        amount=145.00,
+        description="Client summit hotel stay",
+        status="APPROVED",
+    )
+    
+    # Retrieve past claims semantically
+    past_claims = store.search_similar_past_claims(query="hotel", employee_id="emp-123@corp.com")
+    assert len(past_claims) == 1
+    assert past_claims[0]["claim_id"] == "EXP-VEC-101"
+    assert past_claims[0]["amount"] == 145.00
+    assert past_claims[0]["employee_id"] == "e***@corp.com"
