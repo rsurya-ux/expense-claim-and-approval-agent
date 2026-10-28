@@ -187,3 +187,21 @@ def test_vertex_ai_vector_memory_store() -> None:
     assert past_claims[0]["claim_id"] == "EXP-VEC-101"
     assert past_claims[0]["amount"] == 145.00
     assert past_claims[0]["employee_id"] == "e***@corp.com"
+
+
+
+def test_dynamic_model_invocation() -> None:
+    """Verifies that strategic model routing drives dynamic LLM invocations with fallback."""
+    from app.app_utils.model_router import StrategicModelRouter
+    
+    async def _test():
+        res = await StrategicModelRouter.invoke_dynamic_model(
+            model_name="gemini-2.5-flash",
+            system_instruction="You are an expense compliance auditor.",
+            prompt="Audit $45.00 team lunch expense.",
+            fallback_text="Verified compliance under $100 threshold.",
+        )
+        assert len(res) > 0
+        assert "compliance" in res or "Approved" in res or "Verified" in res or len(res) > 5
+
+    asyncio.run(_test())

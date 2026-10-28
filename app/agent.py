@@ -215,12 +215,13 @@ def classify_expense(ctx: Context, node_input: Any) -> Event:
 
 
 @node(name="auto_approve")
-def auto_approve(node_input: dict) -> Event:
+async def auto_approve(node_input: dict) -> Event:
     """Terminal decision node that automatically approves claims under the $100 threshold.
 
-    Emits an approval event, records structured audit logs, validates output
-    integrity via runtime guardrails, and triggers non-blocking background async
-    memory updates for employee spend history.
+    Drives actual dynamic LLM invocation using the strategically routed Fast Model (gemini-2.5-flash)
+    to perform automated compliance validation. Emits an approval event, records structured
+    audit logs, validates output integrity via runtime guardrails, and triggers non-blocking
+    background async memory updates for employee spend history.
 
     Args:
         node_input (dict): The verified claim dictionary containing:
@@ -236,13 +237,22 @@ def auto_approve(node_input: dict) -> Event:
     claim_id = f"EXP-{int(amount * 100)}"
 
     with trace_span("workflow.auto_approve", attributes={"expense.claim_id": claim_id, "expense.amount": amount}):
+        # Strategic Model Routing: Dynamically invoke Flash Model for automated compliance audit
+        model_name, tier, rationale = StrategicModelRouter.resolve_model(amount=amount)
+        llm_audit_note = await StrategicModelRouter.invoke_dynamic_model(
+            model_name=model_name,
+            system_instruction="You are an enterprise expense auditor. Confirm policy compliance in one concise sentence.",
+            prompt=f"Verify expense claim of ${amount:.2f} for '{description}'. Confirm policy compliance under $100 threshold.",
+            fallback_text="Instantly approved: claim is under the $100 threshold.",
+        )
+
         decision = ExpenseDecision(
             claim_id=claim_id,
             amount=amount,
             description=description,
             status="APPROVED",
             approver="auto_approve_policy",
-            note="Instantly approved: claim is under the $100 threshold.",
+            note=llm_audit_note,
         )
 
         # Output Guardrail Verification
@@ -395,13 +405,22 @@ async def review_agent(ctx: Context, node_input: dict) -> Any:
         final_status = "APPROVED" if is_approved else "REJECTED"
         claim_id = f"EXP-{int(amount * 100)}"
 
+        # Strategic Model Routing: Dynamically invoke Pro Model for deep managerial risk evaluation
+        model_name, tier, rationale = StrategicModelRouter.resolve_model(amount=amount, is_escalation=True)
+        llm_risk_brief = await StrategicModelRouter.invoke_dynamic_model(
+            model_name=model_name,
+            system_instruction="You are an executive risk auditor. Generate a 1-sentence risk summary for manager sign-off.",
+            prompt=f"Analyze high-value expense claim of ${amount:.2f} for '{description}'. Evaluate business impact and policy.",
+            fallback_text=f"Manager review completed with response: {user_response}",
+        )
+
         decision = ExpenseDecision(
             claim_id=claim_id,
             amount=amount,
             description=description,
             status=final_status,
             approver="manager_review",
-            note=f"Manager review completed with response: {user_response}",
+            note=llm_risk_brief,
         )
 
         # Output Guardrail Verification
