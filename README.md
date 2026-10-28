@@ -1,11 +1,15 @@
 # Ambient Expense Claim & Approval Agent 🚀
 
+[![Live Demo](https://img.shields.io/badge/Live_Demo-GitHub_Pages-brightgreen.svg)](https://rsurya-ux.github.io/expense-claim-and-approval-agent/)
 [![Google ADK 2.0](https://img.shields.io/badge/Google_ADK-2.0-blue.svg)](https://cloud.google.com/vertex-ai)
 [![Vertex AI Reasoning Engine](https://img.shields.io/badge/Vertex_AI-Reasoning_Engine-4285F4.svg)](https://cloud.google.com/vertex-ai/docs/reasoning-engine/overview)
 [![Cloud Run](https://img.shields.io/badge/Google_Cloud_Run-FastAPI-success.svg)](https://cloud.google.com/run)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)](https://www.python.org/)
 
 An ambient enterprise expense processing system powered by **Google Agent Development Kit (ADK 2.0)**, **Vertex AI Reasoning Engine**, and a **Human-in-the-Loop (HITL) Manager Approval Dashboard** on Cloud Run.
+
+> 🌐 **Live Interactive Web Demo:** Experience the ambient agent workflow and manager review gateway live in your browser:  
+> **[https://rsurya-ux.github.io/expense-claim-and-approval-agent/](https://rsurya-ux.github.io/expense-claim-and-approval-agent/)**
 
 ---
 

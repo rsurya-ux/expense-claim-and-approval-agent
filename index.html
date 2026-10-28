@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ExpenseOps | Autonomous Ambient Expense Agent & HITL Gateway</title>
+  
+  <!-- Fonts: Outfit (headings) & Inter (body) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS, Lucide Icons, Marked -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Outfit', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background-color: #07090e;
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.15) 0%, transparent 40%),
+        radial-gradient(circle at 85% 20%, rgba(168, 85, 247, 0.12) 0%, transparent 45%),
+        radial-gradient(circle at 50% 85%, rgba(16, 185, 129, 0.08) 0%, transparent 50%);
+      background-attachment: fixed;
+    }
+    
+    .glass-card {
+      background: rgba(15, 23, 42, 0.70);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+    }
+    
+    .glass-nav {
+      background: rgba(8, 12, 20, 0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .pulse-dot {
+      animation: pulseGlow 2s infinite;
+    }
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .code-block {
+      background: rgba(10, 14, 23, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(99, 102, 241, 0.3);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(99, 102, 241, 0.6);
+    }
+  </style>
+</head>
+
+<body class="text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-brand-500 selection:text-white">
+
+  <!-- TOP NAVIGATION -->
+  <nav class="sticky top-0 z-40 glass-nav px-6 py-3.5">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      
+      <!-- Brand Logo -->
+      <div class="flex items-center space-x-3.5">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/25 border border-indigo-400/30">
+          <i data-lucide="shield-check" class="w-5 h-5 text-white"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="font-display font-extrabold text-xl tracking-tight text-white">ExpenseOps</span>
+            <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">HITL Gateway</span>
+          </div>
+          <p class="text-xs text-slate-400 hidden sm:block">Google ADK 2.0 Autonomous Agent Approval Pipeline</p>
+        </div>
+      </div>
+
+      <!-- Right Actions & Links -->
+      <div class="flex items-center space-x-3">
+        <!-- Live Status Pill -->
+        <div class="hidden md:flex items-center space-x-2 px-3 py-1.5 rounded-full bg-slate-900/80 border border-white/10 text-xs">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot"></span>
+          <span class="text-slate-300 font-medium">Vertex AI Agent Runtime</span>
+          <span class="text-slate-600">|</span>
+          <span class="text-slate-400">us-central1</span>
+        </div>
+
+        <!-- Submit Custom Claim Button -->
+        <button onclick="openModal('claim-modal')" class="flex items-center space-x-2 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-xs font-medium text-white shadow-md shadow-indigo-600/20 border border-indigo-400/20 transition-all">
+          <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+          <span>Submit Claim</span>
+        </button>
+
+        <!-- GitHub Repo Link -->
+        <a href="https://github.com/rsurya-ux/expense-claim-and-approval-agent" target="_blank" rel="noopener noreferrer" class="flex items-center space-x-2 px-3.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 text-xs font-medium text-slate-200 border border-white/10 transition-all hover:border-indigo-500/40">
+          <i data-lucide="github" class="w-3.5 h-3.5"></i>
+          <span>GitHub</span>
+        </a>
+      </div>
+
+    </div>
+  </nav>
+
+  <!-- MAIN CONTAINER -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-6 py-8 space-y-8">
+    
+    <!-- STATS / POLICY RIBBON -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      
+      <!-- Card 1: Pending Approvals -->
+      <div class="glass-card rounded-2xl p-5 relative overflow-hidden group">
+        <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-amber-500/10 rounded-full blur-xl group-hover:bg-amber-500/15 transition-all"></div>
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-slate-400 uppercase tracking-wider">Awaiting Review</span>
+          <span class="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <i data-lucide="clock" class="w-4 h-4"></i>
+          </span>
+        </div>
+        <div class="mt-4 flex items-baseline space-x-2">
+          <span class="font-display text-3xl font-bold text-white" id="pending-count">1</span>
+          <span class="text-xs text-amber-400 font-medium">Claims In Queue</span>
+        </div>
+      </div>
+
+      <!-- Card 2: Threshold Policy -->
+      <div class="glass-card rounded-2xl p-5 relative overflow-hidden group">
+        <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-indigo-500/10 rounded-full blur-xl group-hover:bg-indigo-500/15 transition-all"></div>
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-slate-400 uppercase tracking-wider">Manager Review Rule</span>
+          <span class="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+            <i data-lucide="shield-alert" class="w-4 h-4"></i>
+          </span>
+        </div>
+        <div class="mt-4 flex items-baseline space-x-2">
+          <span class="font-display text-2xl font-bold text-white">&gt; $50.00</span>
+          <span class="text-xs text-slate-400">HITL Required</span>
+        </div>
+      </div>
+
+      <!-- Card 3: Auto-Approved Policy -->
+      <div class="glass-card rounded-2xl p-5 relative overflow-hidden group">
+        <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-emerald-500/10 rounded-full blur-xl group-hover:bg-emerald-500/15 transition-all"></div>
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-slate-400 uppercase tracking-wider">Auto-Approval Policy</span>
+          <span class="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <i data-lucide="zap" class="w-4 h-4"></i>
+          </span>
+        </div>
+        <div class="mt-4 flex items-baseline space-x-2">
+          <span class="font-display text-2xl font-bold text-emerald-400">&le; $50.00</span>
+          <span class="text-xs text-slate-400">Zero-Touch Pass</span>
+        </div>
+      </div>
+
+      <!-- Card 4: Processed Total -->
+      <div class="glass-card rounded-2xl p-5 relative overflow-hidden group">
+        <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-violet-500/10 rounded-full blur-xl group-hover:bg-violet-500/15 transition-all"></div>
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Claims Processed</span>
+          <span class="p-2 rounded-xl bg-violet-500/10 text-violet-400 border border-violet-500/20">
+            <i data-lucide="activity" class="w-4 h-4"></i>
+          </span>
+        </div>
+        <div class="mt-4 flex items-baseline space-x-2">
+          <span class="font-display text-3xl font-bold text-white" id="processed-count">2</span>
+          <span class="text-xs text-slate-400 font-medium" id="processed-amount">$295.00</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- QUICK INTERACTIVE PRESET DISPATCHER -->
+    <div class="glass-card rounded-2xl p-5 border border-indigo-500/20">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 class="font-display font-bold text-base text-white flex items-center gap-2">
+            <i data-lucide="play-circle" class="w-4 h-4 text-indigo-400"></i>
+            Live Agent Execution Simulator
+          </h2>
+          <p class="text-xs text-slate-400">Trigger test Pub/Sub events directly through the agent state machine to observe real-time policy evaluation.</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2.5">
+          <button onclick="dispatchPreset('lunch')" class="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-slate-800/90 hover:bg-emerald-950/40 border border-white/10 hover:border-emerald-500/40 text-xs font-medium transition-all group">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 group-hover:scale-125 transition-transform"></span>
+            <span>$45.00 Team Lunch</span>
+            <span class="text-emerald-400 font-semibold">(Auto-Approve)</span>
+          </button>
+
+          <button onclick="dispatchPreset('flight')" class="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-slate-800/90 hover:bg-amber-950/40 border border-white/10 hover:border-amber-500/40 text-xs font-medium transition-all group">
+            <span class="w-2 h-2 rounded-full bg-amber-400 group-hover:scale-125 transition-transform"></span>
+            <span>$250.00 NYC Flight</span>
+            <span class="text-amber-400 font-semibold">(Manager Review)</span>
+          </button>
+
+          <button onclick="dispatchPreset('hardware')" class="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-slate-800/90 hover:bg-rose-950/40 border border-white/10 hover:border-rose-500/40 text-xs font-medium transition-all group">
+            <span class="w-2 h-2 rounded-full bg-rose-400 group-hover:scale-125 transition-transform"></span>
+            <span>$1,250.00 Dev Laptop</span>
+            <span class="text-rose-400 font-semibold">(High Value)</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN TWO-COLUMN WORKSPACE -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      
+      <!-- LEFT COLUMN: MANAGER HITL APPROVAL QUEUE (7 COLS) -->
+      <section class="lg:col-span-7 space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2.5">
+            <h2 class="font-display font-bold text-lg text-white">Manager Review Queue</h2>
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-white/10" id="queue-badge">1 Pending</span>
+          </div>
+          <button onclick="clearHistory()" class="text-xs text-slate-400 hover:text-slate-200 transition-colors">Reset Demo Data</button>
+        </div>
+
+        <div id="approval-queue-container" class="space-y-4">
+          <!-- Pending review cards rendered here -->
+        </div>
+
+        <!-- Approved / History Accordion -->
+        <div class="pt-4">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
+            <i data-lucide="check-check" class="w-3.5 h-3.5 text-emerald-400"></i>
+            Approved & Closed Claims
+          </h3>
+          <div id="approved-history-container" class="space-y-3">
+            <!-- Settled items rendered here -->
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT COLUMN: REALTIME AGENT TELEMETRY & WORKFLOW (5 COLS) -->
+      <section class="lg:col-span-5 space-y-4">
+        
+        <!-- Workflow State Visualizer -->
+        <div class="glass-card rounded-2xl p-5 space-y-4">
+          <h2 class="font-display font-bold text-sm text-white flex items-center justify-between">
+            <span class="flex items-center gap-2">
+              <i data-lucide="git-merge" class="w-4 h-4 text-brand-400"></i>
+              ADK 2.0 Graph Workflow State
+            </span>
+            <span class="text-xs text-slate-400 font-mono" id="current-step-label">IDLE</span>
+          </h2>
+
+          <div class="grid grid-cols-4 gap-2 text-center text-xs font-medium">
+            <div id="step-ingest" class="p-2.5 rounded-xl border border-white/10 bg-slate-900/60 text-slate-400 transition-all">
+              <i data-lucide="inbox" class="w-4 h-4 mx-auto mb-1 text-slate-400"></i>
+              Ingest
+            </div>
+            <div id="step-validate" class="p-2.5 rounded-xl border border-white/10 bg-slate-900/60 text-slate-400 transition-all">
+              <i data-lucide="check" class="w-4 h-4 mx-auto mb-1 text-slate-400"></i>
+              Validate
+            </div>
+            <div id="step-policy" class="p-2.5 rounded-xl border border-white/10 bg-slate-900/60 text-slate-400 transition-all">
+              <i data-lucide="scale" class="w-4 h-4 mx-auto mb-1 text-slate-400"></i>
+              Policy
+            </div>
+            <div id="step-route" class="p-2.5 rounded-xl border border-white/10 bg-slate-900/60 text-slate-400 transition-all">
+              <i data-lucide="arrow-right-left" class="w-4 h-4 mx-auto mb-1 text-slate-400"></i>
+              Decision
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Audit Log Stream -->
+        <div class="glass-card rounded-2xl p-5 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="font-display font-semibold text-sm text-white flex items-center gap-2">
+              <i data-lucide="terminal" class="w-4 h-4 text-emerald-400"></i>
+              Live Cloud Logging Stream
+            </h3>
+            <span class="text-[10px] text-slate-400 font-mono">Pub/Sub &bull; ReasonEngine</span>
+          </div>
+
+          <div id="terminal-logs" class="code-block rounded-xl p-3.5 font-mono text-[11px] leading-relaxed text-slate-300 h-80 overflow-y-auto space-y-1.5">
+            <div class="text-slate-500">[System] Initializing ADK 2.0 graph runtime...</div>
+            <div class="text-emerald-400">[AgentRuntime] Vertex AI Reasoning Engine service registered: 4814069000583512064</div>
+            <div class="text-indigo-400">[PubSub] Push subscriber listening on topic: expense-reports</div>
+            <div class="text-slate-500">[Adapter] reasoning_engine_adapter active: async_stream unwrap enabled</div>
+          </div>
+        </div>
+
+        <!-- Architecture Quick Info -->
+        <div class="glass-card rounded-2xl p-4 text-xs text-slate-400 space-y-2">
+          <div class="font-semibold text-slate-300 flex items-center gap-1.5">
+            <i data-lucide="info" class="w-3.5 h-3.5 text-indigo-400"></i>
+            How this works in production:
+          </div>
+          <p>
+            When an expense is submitted via API or ERP, it publishes to Google Cloud Pub/Sub. Pub/Sub pushes the payload directly to the Vertex AI Reasoning Engine using <code class="text-indigo-300">--push-no-wrapper</code>. Claims &gt; $50 pause in the ADK session state until a manager reviews them on this dashboard.
+          </p>
+        </div>
+
+      </section>
+
+    </div>
+
+  </main>
+
+  <!-- CUSTOM CLAIM MODAL -->
+  <div id="claim-modal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="glass-card rounded-2xl max-w-lg w-full p-6 border border-white/10 space-y-5 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-white/10 pb-4">
+        <h3 class="font-display font-bold text-lg text-white flex items-center gap-2">
+          <i data-lucide="receipt" class="w-5 h-5 text-indigo-400"></i>
+          Submit Custom Expense Claim
+        </h3>
+        <button onclick="closeModal('claim-modal')" class="text-slate-400 hover:text-white transition-colors">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form id="claim-form" onsubmit="handleCustomSubmit(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Submitter Email</label>
+          <input type="email" id="form-submitter" required value="developer@company.com" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-white/10 text-white text-sm focus:outline-none focus:border-indigo-500">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Amount ($ USD)</label>
+            <input type="number" step="0.01" min="1" id="form-amount" required value="85.50" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-white/10 text-white text-sm focus:outline-none focus:border-indigo-500 font-mono">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Category</label>
+            <select id="form-category" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-white/10 text-white text-sm focus:outline-none focus:border-indigo-500">
+              <option value="meals">Meals & Dining</option>
+              <option value="travel" selected>Travel & Lodging</option>
+              <option value="hardware">Hardware & IT</option>
+              <option value="software">Software & SaaS</option>
+              <option value="office">Office Supplies</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Expense Description</label>
+          <textarea id="form-desc" rows="2" required class="w-full px-3.5 py-2 rounded-xl bg-slate-900/90 border border-white/10 text-white text-sm focus:outline-none focus:border-indigo-500">Client Strategy Dinner with Acme Corp</textarea>
+        </div>
+
+        <div class="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300">
+          💡 Policy check note: Amounts &le; $50 will be auto-approved instantly; amounts &gt; $50 will route to manager review.
+        </div>
+
+        <div class="flex justify-end space-x-3 pt-2">
+          <button type="button" onclick="closeModal('claim-modal')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs font-medium text-slate-300 hover:bg-slate-700 transition-colors">
+            Cancel
+          </button>
+          <button type="submit" class="px-5 py-2 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-xs font-semibold text-white shadow-lg shadow-indigo-500/20 transition-all">
+            Publish Event
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- JAVASCRIPT STATE ENGINE -->
+  <script>
+    // State Stores
+    let pendingClaims = [
+      {
+        id: "exp-" + Math.floor(1000 + Math.random() * 9000),
+        submitter: "alice@company.com",
+        amount: 250.00,
+        category: "travel",
+        description: "NYC Flight Tickets for Product QBR",
+        date: "2026-04-12",
+        status: "PENDING_REVIEW",
+        reason: "Amount ($250.00) exceeds auto-approval threshold ($50.00). Requires Finance Manager confirmation.",
+        timestamp: new Date().toLocaleTimeString()
+      }
+    ];
+
+    let approvedClaims = [
+      {
+        id: "exp-4819",
+        submitter: "bob@company.com",
+        amount: 45.00,
+        category: "meals",
+        description: "Team lunch meeting",
+        date: "2026-04-12",
+        status: "AUTO_APPROVED",
+        reason: "Amount ($45.00) is within autonomous limit (<= $50.00). Zero-touch approval executed.",
+        timestamp: "09:31:36 AM"
+      }
+    ];
+
+    // Presets
+    const PRESETS = {
+      lunch: {
+        amount: 45.00,
+        submitter: "bob@company.com",
+        category: "meals",
+        description: "Team lunch meeting",
+        date: "2026-04-12"
+      },
+      flight: {
+        amount: 250.00,
+        submitter: "alice@company.com",
+        category: "travel",
+        description: "NYC Flight Tickets",
+        date: "2026-04-12"
+      },
+      hardware: {
+        amount: 1250.00,
+        submitter: "chen@company.com",
+        category: "hardware",
+        description: "MacBook Pro M-Series for engineering",
+        date: "2026-04-12"
+      }
+    };
+
+    // Initialize UI on load
+    document.addEventListener("DOMContentLoaded", () => {
+      lucide.createIcons();
+      renderQueue();
+      renderApproved();
+      updateMetrics();
+    });
+
+    function logTerminal(msg, type = "info") {
+      const logs = document.getElementById("terminal-logs");
+      const time = new Date().toLocaleTimeString();
+      const div = document.createElement("div");
+      
+      if (type === "success") {
+        div.className = "text-emerald-400";
+        div.innerHTML = `<span class="text-slate-500">[${time}]</span> <span class="font-bold">✔</span> ${msg}`;
+      } else if (type === "warn") {
+        div.className = "text-amber-400";
+        div.innerHTML = `<span class="text-slate-500">[${time}]</span> <span class="font-bold">⚠</span> ${msg}`;
+      } else if (type === "step") {
+        div.className = "text-indigo-400";
+        div.innerHTML = `<span class="text-slate-500">[${time}]</span> <span class="font-bold">➔</span> ${msg}`;
+      } else {
+        div.className = "text-slate-300";
+        div.innerHTML = `<span class="text-slate-500">[${time}]</span> ${msg}`;
+      }
+      
+      logs.appendChild(div);
+      logs.scrollTop = logs.scrollHeight;
+    }
+
+    async function setStep(step) {
+      const steps = ["ingest", "validate", "policy", "route"];
+      steps.forEach(s => {
+        const el = document.getElementById(`step-${s}`);
+        el.className = "p-2.5 rounded-xl border border-white/10 bg-slate-900/60 text-slate-400 transition-all";
+      });
+
+      const label = document.getElementById("current-step-label");
+
+      if (step) {
+        label.innerText = step.toUpperCase();
+        const active = document.getElementById(`step-${step}`);
+        if (active) {
+          active.className = "p-2.5 rounded-xl border border-brand-500/50 bg-brand-500/20 text-white shadow-lg shadow-indigo-500/20 font-bold transition-all";
+        }
+      } else {
+        label.innerText = "IDLE";
+      }
+    }
+
+    async function simulateAgentWorkflow(claim) {
+      logTerminal(`Pub/Sub topic [expense-reports] received claim: $${claim.amount.toFixed(2)} (${claim.category})`, "step");
+      
+      // Step 1: Ingest
+      await setStep("ingest");
+      logTerminal(`Ingesting JSON event payload for submitter: ${claim.submitter}`);
+      await new Promise(r => setTimeout(r, 400));
+
+      // Step 2: Validate
+      await setStep("validate");
+      logTerminal(`Schema validation OK: amount=$${claim.amount}, category=${claim.category}, date=${claim.date}`);
+      await new Promise(r => setTimeout(r, 450));
+
+      // Step 3: Policy Check
+      await setStep("policy");
+      logTerminal(`Evaluating policy: rule 'AmountThresholdCheck(max=50.00)'`);
+      await new Promise(r => setTimeout(r, 500));
+
+      // Step 4: Routing Decision
+      await setStep("route");
+      if (claim.amount <= 50.00) {
+        logTerminal(`Policy passed: $${claim.amount.toFixed(2)} <= $50.00. Decision: AUTO_APPROVE`, "success");
+        logTerminal(`Writing approval confirmation to audit log. HTTP 200 OK acknowledged.`, "success");
+        
+        claim.status = "AUTO_APPROVED";
+        claim.reason = `Amount ($${claim.amount.toFixed(2)}) is within autonomous limit (<= $50.00). Approved automatically.`;
+        claim.timestamp = new Date().toLocaleTimeString();
+        approvedClaims.unshift(claim);
+      } else {
+        logTerminal(`Threshold triggered: $${claim.amount.toFixed(2)} > $50.00. Decision: HITL_MANAGER_REVIEW`, "warn");
+        logTerminal(`Dispatching review task to Cloud Run Dashboard. Awaiting Human Manager decision.`, "warn");
+        
+        claim.status = "PENDING_REVIEW";
+        claim.reason = `Amount ($${claim.amount.toFixed(2)}) exceeds auto-approval threshold ($50.00). Flagged for manager sign-off.`;
+        claim.timestamp = new Date().toLocaleTimeString();
+        pendingClaims.unshift(claim);
+      }
+
+      await new Promise(r => setTimeout(r, 600));
+      await setStep(null);
+
+      renderQueue();
+      renderApproved();
+      updateMetrics();
+      lucide.createIcons();
+    }
+
+    function dispatchPreset(type) {
+      const template = PRESETS[type];
+      const claim = {
+        ...template,
+        id: "exp-" + Math.floor(1000 + Math.random() * 9000),
+      };
+      simulateAgentWorkflow(claim);
+    }
+
+    function handleCustomSubmit(e) {
+      e.preventDefault();
+      const amount = parseFloat(document.getElementById("form-amount").value);
+      const submitter = document.getElementById("form-submitter").value;
+      const category = document.getElementById("form-category").value;
+      const description = document.getElementById("form-desc").value;
+      const today = new Date().toISOString().split('T')[0];
+
+      const claim = {
+        id: "exp-" + Math.floor(1000 + Math.random() * 9000),
+        amount,
+        submitter,
+        category,
+        description,
+        date: today
+      };
+
+      closeModal('claim-modal');
+      simulateAgentWorkflow(claim);
+    }
+
+    function approveClaim(id) {
+      const idx = pendingClaims.findIndex(c => c.id === id);
+      if (idx !== -1) {
+        const claim = pendingClaims.splice(idx, 1)[0];
+        claim.status = "APPROVED_BY_MANAGER";
+        claim.timestamp = new Date().toLocaleTimeString();
+        claim.reason = "Approved manually by Finance Manager via HITL Gateway.";
+        approvedClaims.unshift(claim);
+
+        logTerminal(`Manager SIGN-OFF: Claim ${claim.id} ($${claim.amount.toFixed(2)}) APPROVED`, "success");
+        logTerminal(`ADK session state resumed. Settlement notified to ${claim.submitter}`);
+
+        renderQueue();
+        renderApproved();
+        updateMetrics();
+        lucide.createIcons();
+      }
+    }
+
+    function rejectClaim(id) {
+      const idx = pendingClaims.findIndex(c => c.id === id);
+      if (idx !== -1) {
+        const claim = pendingClaims.splice(idx, 1)[0];
+        claim.status = "REJECTED_BY_MANAGER";
+        claim.timestamp = new Date().toLocaleTimeString();
+        claim.reason = "Rejected by Finance Manager. Violation of expense policy guidelines.";
+
+        logTerminal(`Manager REJECTION: Claim ${claim.id} ($${claim.amount.toFixed(2)}) REJECTED`, "warn");
+
+        renderQueue();
+        updateMetrics();
+        lucide.createIcons();
+      }
+    }
+
+    function renderQueue() {
+      const container = document.getElementById("approval-queue-container");
+      const badge = document.getElementById("queue-badge");
+      badge.innerText = `${pendingClaims.length} Pending`;
+
+      if (pendingClaims.length === 0) {
+        container.innerHTML = `
+          <div class="glass-card rounded-2xl p-8 text-center space-y-3 border-dashed border-white/10">
+            <div class="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/20">
+              <i data-lucide="check-circle-2" class="w-6 h-6"></i>
+            </div>
+            <div class="font-display font-bold text-white text-base">All Caught Up!</div>
+            <p class="text-xs text-slate-400 max-w-sm mx-auto">No claims currently require human intervention. Expenses below $50 are auto-cleared.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = pendingClaims.map(c => `
+        <div class="glass-card rounded-2xl p-5 border-l-4 border-amber-400 space-y-4 hover:border-amber-300 transition-all">
+          <div class="flex items-start justify-between">
+            <div class="space-y-1">
+              <div class="flex items-center space-x-2">
+                <span class="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-white/10">${c.id}</span>
+                <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">Manager Sign-off Needed</span>
+                <span class="text-xs text-slate-500 font-mono">${c.timestamp}</span>
+              </div>
+              <h3 class="font-display font-bold text-base text-white">${c.description}</h3>
+              <p class="text-xs text-slate-400">Submitted by: <span class="text-slate-200 font-medium">${c.submitter}</span> &bull; Category: <span class="text-indigo-300 font-medium capitalize">${c.category}</span></p>
+            </div>
+            <div class="text-right">
+              <div class="font-display font-extrabold text-2xl text-white font-mono">$${c.amount.toFixed(2)}</div>
+              <span class="text-[11px] text-slate-400 font-mono">${c.date}</span>
+            </div>
+          </div>
+
+          <div class="p-3 rounded-xl bg-slate-900/80 border border-white/5 text-xs text-slate-300 flex items-start gap-2.5">
+            <i data-lucide="alert-circle" class="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5"></i>
+            <div>
+              <span class="font-semibold text-amber-300">Agent Policy Reason:</span> ${c.reason}
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end space-x-2.5 pt-1">
+            <button onclick="rejectClaim('${c.id}')" class="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-rose-950/40 text-xs font-medium text-slate-300 hover:text-rose-300 border border-white/10 hover:border-rose-500/30 transition-all">
+              <i data-lucide="x" class="w-3.5 h-3.5"></i>
+              <span>Reject</span>
+            </button>
+            <button onclick="approveClaim('${c.id}')" class="flex items-center space-x-1.5 px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-xs font-semibold text-white shadow-md shadow-emerald-600/20 border border-emerald-400/20 transition-all">
+              <i data-lucide="check" class="w-3.5 h-3.5"></i>
+              <span>Approve Claim</span>
+            </button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderApproved() {
+      const container = document.getElementById("approved-history-container");
+      if (approvedClaims.length === 0) {
+        container.innerHTML = `<p class="text-xs text-slate-500 italic">No approved claims yet.</p>`;
+        return;
+      }
+
+      container.innerHTML = approvedClaims.map(c => `
+        <div class="glass-card rounded-xl p-3.5 flex items-center justify-between border-l-4 ${c.status === 'AUTO_APPROVED' ? 'border-emerald-400' : 'border-indigo-400'}">
+          <div class="space-y-0.5">
+            <div class="flex items-center space-x-2">
+              <span class="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">${c.id}</span>
+              <span class="text-xs font-bold text-white">${c.description}</span>
+              <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full ${c.status === 'AUTO_APPROVED' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}">
+                ${c.status === 'AUTO_APPROVED' ? 'Auto-Approved' : 'Manager Approved'}
+              </span>
+            </div>
+            <p class="text-[11px] text-slate-400">${c.submitter} &bull; ${c.reason}</p>
+          </div>
+          <div class="text-right">
+            <span class="font-display font-bold text-base text-emerald-400 font-mono">$${c.amount.toFixed(2)}</span>
+            <div class="text-[10px] text-slate-500 font-mono">${c.timestamp}</div>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function updateMetrics() {
+      document.getElementById("pending-count").innerText = pendingClaims.length;
+
+      const totalCount = pendingClaims.length + approvedClaims.length;
+      document.getElementById("processed-count").innerText = totalCount;
+
+      const totalSum = [...pendingClaims, ...approvedClaims].reduce((acc, c) => acc + c.amount, 0);
+      document.getElementById("processed-amount").innerText = "$" + totalSum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function clearHistory() {
+      pendingClaims = [];
+      approvedClaims = [];
+      renderQueue();
+      renderApproved();
+      updateMetrics();
+      lucide.createIcons();
+      logTerminal("Demo state reset.", "step");
+    }
+
+    function openModal(id) {
+      document.getElementById(id).classList.remove("hidden");
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.add("hidden");
+    }
+  </script>
+</body>
+</html>
