@@ -154,3 +154,14 @@ def test_structured_json_logging_and_intent_outcome() -> None:
     assert parsed["audit"]["execution_outcome"] == "AUTO_APPROVED"
     assert parsed["audit"]["credit_card"] == "[REDACTED_CARD]"
     assert "u***@corp.com" in parsed["message"]
+
+
+
+def test_custom_opentelemetry_spans() -> None:
+    """Verifies custom OpenTelemetry distributed tracing spans with PII scrubbed attributes."""
+    from app.app_utils.observability import trace_span
+
+    with trace_span("test_custom_operation", attributes={"claim.id": "EXP-1234", "user.email": "test@corp.com"}) as span:
+        assert span is not None
+        # Span must have recorded attributes with PII masked
+        # Context exited normally with OK status

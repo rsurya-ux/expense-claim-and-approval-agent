@@ -15,7 +15,7 @@
 """Ambient Expense Agent with ADK 2.0 Graph Workflow, Guardrails, and HITL Review."""
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from google.adk.agents.context import Context
 from google.adk.apps import App, ResumabilityConfig
@@ -38,6 +38,7 @@ from app.app_utils.observability import (
     PIIRedactor,
     log_intent_vs_outcome,
     logger,
+    trace_span,
 )
 
 # Preserved base model configuration
@@ -71,8 +72,20 @@ class ExpenseDecision(BaseModel):
     note: str = ""
 
 
-def _parse_claim_from_input(node_input: Any) -> tuple[float, str]:
-    """Extracts monetary amount and description from diverse input types."""
+def _parse_claim_from_input(node_input: Any) -> Tuple[float, str]:
+    """Extracts monetary amount and description from diverse input types.
+
+    Args:
+        node_input (Any): The incoming payload to parse. Supported types include:
+            - `dict`: With 'amount' (float/int) and 'description' (str) keys.
+            - `int` or `float`: Direct numerical amount.
+            - `types.Content`: Google GenAI content object containing text parts.
+            - `str`: Free-form expense text (e.g., 'Lunch for $45.00').
+
+    Returns:
+        Tuple[float, str]: A tuple containing the parsed numeric monetary amount in USD
+            and the cleaned text description or justification of the claim.
+    """
     if isinstance(node_input, dict):
         amount = float(node_input.get("amount", 0.0))
         description = str(node_input.get("description", "Standard expense claim"))
@@ -96,142 +109,191 @@ def _parse_claim_from_input(node_input: Any) -> tuple[float, str]:
 
 
 def classify_expense(ctx: Context, node_input: Any) -> Event:
-    """Intake node: parses claim amount and routes based on $100 threshold."""
-    amount, description = _parse_claim_from_input(node_input)
-    pending = ctx.state.get("pending_claim")
+    """Intake node: parses claim amount and routes based on $100 threshold.
 
-    # 1. Runtime Guardrail Check
-    is_valid, error_msg = RuntimeGuardrail.check_input(text=description, amount=amount)
-    if not is_valid:
-        log_intent_vs_outcome(
-            user_intent="submit_claim",
-            execution_outcome="REJECTED_BY_GUARDRAIL",
+    Screens incoming input via runtime security guardrails, compacts long
+    conversation histories, dynamically routes model tiers, and dispatches the
+    claim to either automated approval or human manager review.
+
+    Args:
+        ctx (Context): The ADK agent runtime context managing workflow session state,
+            resumption inputs (`ctx.resume_inputs`), and history state.
+        node_input (Any): The incoming claim payload, which can be a dictionary,
+            a string message, a numeric amount, or an ADK event content object.
+
+    Returns:
+        Event: An ADK Event object routing the workflow to either the 'auto_approve' node
+            (if amount < $100.00) or 'review_agent' node (if amount >= $100.00 or pending
+            review response), along with the parsed claim payload and updated state.
+    """
+    with trace_span("workflow.classify_expense", attributes={"node.name": "classify_expense"}):
+        amount, description = _parse_claim_from_input(node_input)
+        pending = ctx.state.get("pending_claim")
+
+        # 1. Runtime Guardrail Check
+        is_valid, error_msg = RuntimeGuardrail.check_input(text=description, amount=amount)
+        if not is_valid:
+            log_intent_vs_outcome(
+                user_intent="submit_claim",
+                execution_outcome="REJECTED_BY_GUARDRAIL",
+                amount=amount,
+                discrepancy=True,
+                extra_details={"violation": error_msg},
+            )
+            return Event(
+                output={"amount": amount, "description": description, "status": "REJECTED", "reason": error_msg},
+                content=types.Content(
+                    role="model",
+                    parts=[types.Part.from_text(text=f"### 🛡️ Guardrail Alert\n{error_msg}")],
+                ),
+                route=None,
+            )
+
+        # 2. Context & History Compaction Check
+        history = ctx.state.get("history", [])
+        if isinstance(history, list) and len(history) > 6:
+            compacted = compact_conversation_history(history, max_turns=4)
+            ctx.state["history"] = compacted
+
+        raw_text = description.lower().strip()
+        decision_tokens = {"yes", "y", "approve", "approved", "no", "n", "reject", "rejected"}
+        raw_words = set(re.findall(r"\w+", raw_text))
+
+        # If there is a pending claim awaiting manager review:
+        if pending and (bool(raw_words & decision_tokens) or amount == 0.0):
+            # Model routing for manager review
+            StrategicModelRouter.resolve_model(amount=pending["amount"], is_escalation=True)
+            return Event(
+                output={
+                    "amount": pending["amount"],
+                    "description": pending["description"],
+                    "human_decision": raw_text,
+                },
+                route="review_agent",
+            )
+
+        claim_payload = {"amount": amount, "description": description}
+
+        # 3. Dynamic Model Routing Evaluation
+        model_name, tier, rationale = StrategicModelRouter.resolve_model(
             amount=amount,
-            discrepancy=True,
-            extra_details={"violation": error_msg},
-        )
-        return Event(
-            output={"amount": amount, "description": description, "status": "REJECTED", "reason": error_msg},
-            content=types.Content(
-                role="model",
-                parts=[types.Part.from_text(text=f"### 🛡️ Guardrail Alert\n{error_msg}")],
-            ),
-            route=None,
+            is_escalation=(amount >= 100.0),
         )
 
-    # 2. Context & History Compaction Check
-    history = ctx.state.get("history", [])
-    if isinstance(history, list) and len(history) > 6:
-        compacted = compact_conversation_history(history, max_turns=4)
-        ctx.state["history"] = compacted
-
-    raw_text = description.lower().strip()
-    decision_tokens = {"yes", "y", "approve", "approved", "no", "n", "reject", "rejected"}
-    raw_words = set(re.findall(r"\w+", raw_text))
-
-    # If there is a pending claim awaiting manager review:
-    if pending and (bool(raw_words & decision_tokens) or amount == 0.0):
-        # Model routing for manager review
-        StrategicModelRouter.resolve_model(amount=pending["amount"], is_escalation=True)
-        return Event(
-            output={
-                "amount": pending["amount"],
-                "description": pending["description"],
-                "human_decision": raw_text,
-            },
-            route="review_agent",
-        )
-
-    claim_payload = {"amount": amount, "description": description}
-
-    # 3. Dynamic Model Routing Evaluation
-    model_name, tier, rationale = StrategicModelRouter.resolve_model(
-        amount=amount,
-        is_escalation=(amount >= 100.0),
-    )
-
-    if amount < 100.0:
-        log_intent_vs_outcome(
-            user_intent="submit_claim",
-            execution_outcome="ROUTE_AUTO_APPROVE",
-            amount=amount,
-            extra_details={"model_tier": tier, "rationale": rationale},
-        )
-        return Event(
-            output=claim_payload,
-            route="auto_approve",
-            state={"current_claim": claim_payload, "pending_claim": None, "model_tier": tier},
-        )
-    else:
-        log_intent_vs_outcome(
-            user_intent="submit_claim",
-            execution_outcome="ROUTE_MANAGER_REVIEW",
-            amount=amount,
-            extra_details={"model_tier": tier, "rationale": rationale},
-        )
-        return Event(
-            output=claim_payload,
-            route="review_agent",
-            state={"pending_claim": claim_payload, "current_claim": claim_payload, "model_tier": tier},
-        )
+        if amount < 100.0:
+            log_intent_vs_outcome(
+                user_intent="submit_claim",
+                execution_outcome="ROUTE_AUTO_APPROVE",
+                amount=amount,
+                extra_details={"model_tier": tier, "rationale": rationale},
+            )
+            return Event(
+                output=claim_payload,
+                route="auto_approve",
+                state={"current_claim": claim_payload, "pending_claim": None, "model_tier": tier},
+            )
+        else:
+            log_intent_vs_outcome(
+                user_intent="submit_claim",
+                execution_outcome="ROUTE_MANAGER_REVIEW",
+                amount=amount,
+                extra_details={"model_tier": tier, "rationale": rationale},
+            )
+            return Event(
+                output=claim_payload,
+                route="review_agent",
+                state={"pending_claim": claim_payload, "current_claim": claim_payload, "model_tier": tier},
+            )
 
 
 @node(name="auto_approve")
 def auto_approve(node_input: dict) -> Event:
-    """Automatically approves standard expense claims under $100."""
+    """Terminal decision node that automatically approves claims under the $100 threshold.
+
+    Emits an approval event, records structured audit logs, validates output
+    integrity via runtime guardrails, and triggers non-blocking background async
+    memory updates for employee spend history.
+
+    Args:
+        node_input (dict): The verified claim dictionary containing:
+            - 'amount' (float): Total monetary cost in USD (< $100.00).
+            - 'description' (str): Justification or category of the expenditure.
+
+    Returns:
+        Event: An ADK Event containing the serialized `ExpenseDecision` payload,
+            formatted Markdown approval response, and updated state.
+    """
     amount = float(node_input.get("amount", 0.0))
     description = str(node_input.get("description", "Expense claim"))
-
     claim_id = f"EXP-{int(amount * 100)}"
-    decision = ExpenseDecision(
-        claim_id=claim_id,
-        amount=amount,
-        description=description,
-        status="APPROVED",
-        approver="auto_approve_policy",
-        note="Instantly approved: claim is under the $100 threshold.",
-    )
 
-    # Output Guardrail Verification
-    RuntimeGuardrail.check_output(decision.model_dump())
+    with trace_span("workflow.auto_approve", attributes={"expense.claim_id": claim_id, "expense.amount": amount}):
+        decision = ExpenseDecision(
+            claim_id=claim_id,
+            amount=amount,
+            description=description,
+            status="APPROVED",
+            approver="auto_approve_policy",
+            note="Instantly approved: claim is under the $100 threshold.",
+        )
 
-    # Background Async Memory Persistence (non-blocking)
-    async_persist_background_memory(
-        employee_id="EMP-DEFAULT",
-        claim_id=claim_id,
-        amount=amount,
-        status="APPROVED",
-    )
+        # Output Guardrail Verification
+        RuntimeGuardrail.check_output(decision.model_dump())
 
-    # Audit Logging: Intent vs Outcome
-    log_intent_vs_outcome(
-        user_intent="submit_claim",
-        execution_outcome="AUTO_APPROVED",
-        amount=amount,
-        claim_id=claim_id,
-        discrepancy=False,
-    )
+        # Background Async Memory Persistence (non-blocking)
+        async_persist_background_memory(
+            employee_id="EMP-DEFAULT",
+            claim_id=claim_id,
+            amount=amount,
+            status="APPROVED",
+        )
 
-    content_text = (
-        f"### Instant Expense Approval\n"
-        f"- **Status:** APPROVED\n"
-        f"- **Amount:** ${amount:.2f}\n"
-        f"- **Description:** {description}\n"
-        f"- **Policy:** Standard claims under $100 are automatically approved.\n"
-    )
+        # Audit Logging: Intent vs Outcome
+        log_intent_vs_outcome(
+            user_intent="submit_claim",
+            execution_outcome="AUTO_APPROVED",
+            amount=amount,
+            claim_id=claim_id,
+            discrepancy=False,
+        )
 
-    return Event(
-        output=decision.model_dump(),
-        content=types.Content(
-            role="model", parts=[types.Part.from_text(text=content_text)]
-        ),
-        state={"approval_decision": decision.model_dump()},
-    )
+        content_text = (
+            f"### Instant Expense Approval\n"
+            f"- **Status:** APPROVED\n"
+            f"- **Amount:** ${amount:.2f}\n"
+            f"- **Description:** {description}\n"
+            f"- **Policy:** Standard claims under $100 are automatically approved.\n"
+        )
+
+        return Event(
+            output=decision.model_dump(),
+            content=types.Content(
+                role="model", parts=[types.Part.from_text(text=content_text)]
+            ),
+            state={"approval_decision": decision.model_dump()},
+        )
 
 
 @node(name="review_agent", rerun_on_resume=True)
 async def review_agent(ctx: Context, node_input: dict) -> Any:
-    """Human-in-the-loop review node: pauses claims >= $100 for manager approval."""
+    """Human-in-the-loop review node: pauses claims >= $100 for manager approval.
+
+    If manager review has not been submitted, pauses the workflow by yielding
+    an `adk_request_input` interrupt. When resumed with a decision token ('yes'/'no'
+    or structured payload), records the manager's decision, triggers background
+    memory persistence, and terminates the review cycle.
+
+    Args:
+        ctx (Context): The ADK execution context holding session state, active interrupts,
+            and manager resumption payloads (`ctx.resume_inputs["manager_review"]`).
+        node_input (dict): The claim details dictionary containing 'amount' (float) and
+            'description' (str), optionally including forwarded 'human_decision' tokens.
+
+    Yields:
+        Event | RequestInput: Emits an interactive `RequestInput` pause event if manager approval
+            is pending, or a terminal `Event` containing the final `ExpenseDecision` once
+            a valid decision ('yes'/'no') has been recorded.
+    """
     amount = float(node_input.get("amount", 0.0)) if node_input else 0.0
     description = (
         str(node_input.get("description", "Expense claim"))
@@ -241,134 +303,135 @@ async def review_agent(ctx: Context, node_input: dict) -> Any:
 
     interrupt_id = "manager_review"
 
-    # Check if review input was provided via resumption or forwarded text response
-    human_decision = node_input.get("human_decision") if node_input else None
-    user_response = None
-    if ctx.resume_inputs and interrupt_id in ctx.resume_inputs:
-        user_response = ctx.resume_inputs[interrupt_id]
-    elif human_decision:
-        user_response = human_decision
+    with trace_span("workflow.review_agent", attributes={"expense.amount": amount, "interrupt.id": interrupt_id}):
+        # Check if review input was provided via resumption or forwarded text response
+        human_decision = node_input.get("human_decision") if node_input else None
+        user_response = None
+        if ctx.resume_inputs and interrupt_id in ctx.resume_inputs:
+            user_response = ctx.resume_inputs[interrupt_id]
+        elif human_decision:
+            user_response = human_decision
 
-    # Step 1: Trigger HITL Pause if manager approval has not been provided
-    if user_response is None:
-        log_intent_vs_outcome(
-            user_intent="submit_high_value_claim",
-            execution_outcome="PAUSED_FOR_HITL",
-            amount=amount,
-            extra_details={"interrupt_id": interrupt_id},
-        )
-        prompt_message = (
-            f"### ⚠️ Manager Review Required\n\n"
-            f"- **Claim Amount:** ${amount:.2f}\n"
-            f"- **Description:** {description}\n"
-            f"- **Policy:** Claims of $100 or more require explicit manager approval.\n\n"
-            f"👉 **Action Required:** Do you approve this expense claim? (Reply **yes** or **no**)"
-        )
-        yield Event(
-            content=types.Content(
-                role="model",
-                parts=[types.Part.from_text(text=prompt_message)],
+        # Step 1: Trigger HITL Pause if manager approval has not been provided
+        if user_response is None:
+            log_intent_vs_outcome(
+                user_intent="submit_high_value_claim",
+                execution_outcome="PAUSED_FOR_HITL",
+                amount=amount,
+                extra_details={"interrupt_id": interrupt_id},
             )
+            prompt_message = (
+                f"### ⚠️ Manager Review Required\n\n"
+                f"- **Claim Amount:** ${amount:.2f}\n"
+                f"- **Description:** {description}\n"
+                f"- **Policy:** Claims of $100 or more require explicit manager approval.\n\n"
+                f"👉 **Action Required:** Do you approve this expense claim? (Reply **yes** or **no**)"
+            )
+            yield Event(
+                content=types.Content(
+                    role="model",
+                    parts=[types.Part.from_text(text=prompt_message)],
+                )
+            )
+            yield RequestInput(
+                interrupt_id=interrupt_id,
+                message=prompt_message,
+                payload={"amount": amount, "description": description},
+            )
+            return
+
+        # Step 2: Validate human review decision
+        response_str = str(user_response).lower().strip()
+        tokens_approve = {"yes", "y", "approve", "approved"}
+        tokens_reject = {"no", "n", "reject", "rejected"}
+
+        if isinstance(user_response, dict):
+            resp_val = str(user_response.get("response", "")).lower().strip()
+            is_approved = user_response.get("approved") is True or resp_val in tokens_approve
+            is_rejected = user_response.get("approved") is False or resp_val in tokens_reject
+        else:
+            words = set(re.findall(r"\w+", response_str))
+            is_approved = bool(words & tokens_approve) and not bool(words & tokens_reject)
+            is_rejected = bool(words & tokens_reject) and not bool(words & tokens_approve)
+
+        if not is_approved and not is_rejected:
+            # Invalid response! Re-prompt and keep workflow paused.
+            log_intent_vs_outcome(
+                user_intent="manager_review_response",
+                execution_outcome="AMBIGUOUS_REPROMPT",
+                amount=amount,
+                discrepancy=True,
+                extra_details={"invalid_response": str(user_response)},
+            )
+            invalid_message = (
+                f"### ⚠️ Invalid Response: \"{user_response}\"\n\n"
+                f"`{user_response}` is not a recognized review decision for pending claim of **${amount:.2f}** ('{description}').\n\n"
+                f"👉 **Please reply with:**\n"
+                f"- **yes** (or **approve**) to approve this claim\n"
+                f"- **no** (or **reject**) to reject this claim"
+            )
+            yield Event(
+                content=types.Content(
+                    role="model",
+                    parts=[types.Part.from_text(text=invalid_message)],
+                )
+            )
+            yield RequestInput(
+                interrupt_id=interrupt_id,
+                message=invalid_message,
+                payload={"amount": amount, "description": description},
+            )
+            return
+
+        final_status = "APPROVED" if is_approved else "REJECTED"
+        claim_id = f"EXP-{int(amount * 100)}"
+
+        decision = ExpenseDecision(
+            claim_id=claim_id,
+            amount=amount,
+            description=description,
+            status=final_status,
+            approver="manager_review",
+            note=f"Manager review completed with response: {user_response}",
         )
-        yield RequestInput(
-            interrupt_id=interrupt_id,
-            message=prompt_message,
-            payload={"amount": amount, "description": description},
+
+        # Output Guardrail Verification
+        RuntimeGuardrail.check_output(decision.model_dump())
+
+        # Background Async Memory Persistence (non-blocking)
+        async_persist_background_memory(
+            employee_id="EMP-DEFAULT",
+            claim_id=claim_id,
+            amount=amount,
+            status=final_status,
         )
-        return
 
-    # Step 2: Validate human review decision
-    response_str = str(user_response).lower().strip()
-    tokens_approve = {"yes", "y", "approve", "approved"}
-    tokens_reject = {"no", "n", "reject", "rejected"}
-
-    if isinstance(user_response, dict):
-        resp_val = str(user_response.get("response", "")).lower().strip()
-        is_approved = user_response.get("approved") is True or resp_val in tokens_approve
-        is_rejected = user_response.get("approved") is False or resp_val in tokens_reject
-    else:
-        words = set(re.findall(r"\w+", response_str))
-        is_approved = bool(words & tokens_approve) and not bool(words & tokens_reject)
-        is_rejected = bool(words & tokens_reject) and not bool(words & tokens_approve)
-
-    if not is_approved and not is_rejected:
-        # Invalid response! Re-prompt and keep workflow paused.
+        # Log Intent vs Outcome
         log_intent_vs_outcome(
             user_intent="manager_review_response",
-            execution_outcome="AMBIGUOUS_REPROMPT",
+            execution_outcome=f"MANAGER_{final_status}",
             amount=amount,
-            discrepancy=True,
-            extra_details={"invalid_response": str(user_response)},
+            claim_id=claim_id,
+            discrepancy=(final_status == "REJECTED"),
+            extra_details={"decision_input": str(user_response)},
         )
-        invalid_message = (
-            f"### ⚠️ Invalid Response: \"{user_response}\"\n\n"
-            f"`{user_response}` is not a recognized review decision for pending claim of **${amount:.2f}** ('{description}').\n\n"
-            f"👉 **Please reply with:**\n"
-            f"- **yes** (or **approve**) to approve this claim\n"
-            f"- **no** (or **reject**) to reject this claim"
+
+        summary_text = (
+            f"### Review Decision: {final_status}\n"
+            f"- **Status:** {final_status}\n"
+            f"- **Amount:** ${amount:.2f}\n"
+            f"- **Description:** {description}\n"
+            f"- **Approver:** Manager (Human-in-the-Loop)\n"
+            f"- **Decision Input:** {user_response}\n"
         )
+
         yield Event(
+            output=decision.model_dump(),
             content=types.Content(
-                role="model",
-                parts=[types.Part.from_text(text=invalid_message)],
-            )
+                role="model", parts=[types.Part.from_text(text=summary_text)]
+            ),
+            state={"approval_decision": decision.model_dump(), "pending_claim": None},
         )
-        yield RequestInput(
-            interrupt_id=interrupt_id,
-            message=invalid_message,
-            payload={"amount": amount, "description": description},
-        )
-        return
-
-    final_status = "APPROVED" if is_approved else "REJECTED"
-    claim_id = f"EXP-{int(amount * 100)}"
-
-    decision = ExpenseDecision(
-        claim_id=claim_id,
-        amount=amount,
-        description=description,
-        status=final_status,
-        approver="manager_review",
-        note=f"Manager review completed with response: {user_response}",
-    )
-
-    # Output Guardrail Verification
-    RuntimeGuardrail.check_output(decision.model_dump())
-
-    # Background Async Memory Persistence (non-blocking)
-    async_persist_background_memory(
-        employee_id="EMP-DEFAULT",
-        claim_id=claim_id,
-        amount=amount,
-        status=final_status,
-    )
-
-    # Log Intent vs Outcome
-    log_intent_vs_outcome(
-        user_intent="manager_review_response",
-        execution_outcome=f"MANAGER_{final_status}",
-        amount=amount,
-        claim_id=claim_id,
-        discrepancy=(final_status == "REJECTED"),
-        extra_details={"decision_input": str(user_response)},
-    )
-
-    summary_text = (
-        f"### Review Decision: {final_status}\n"
-        f"- **Status:** {final_status}\n"
-        f"- **Amount:** ${amount:.2f}\n"
-        f"- **Description:** {description}\n"
-        f"- **Approver:** Manager (Human-in-the-Loop)\n"
-        f"- **Decision Input:** {user_response}\n"
-    )
-
-    yield Event(
-        output=decision.model_dump(),
-        content=types.Content(
-            role="model", parts=[types.Part.from_text(text=summary_text)]
-        ),
-        state={"approval_decision": decision.model_dump(), "pending_claim": None},
-    )
 
 
 # Graph Topology Definition
